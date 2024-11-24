@@ -9,7 +9,7 @@ def boolean_string(s):
 
 def define_pdcnet_parser(subparsers):
 
-    PDCNet = subparsers.add_parser('PDCNet', help='inference parameters for PDCNet')
+    PDCNet = subparsers.add_parser('PDCNet_plus', help='inference parameters for PDCNet')
     PDCNet.add_argument(
         '--confidence_map_R', default=1.0, type=float,
         help='R used for confidence map computation',
@@ -56,6 +56,7 @@ def define_model_parser(parser):
     parser.add_argument('--path_to_pre_trained_models', type=str, default='pre_trained_models/',
                         help='path to the folder containing the pre trained model weights, or '
                              'path to the model checkpoint.')
+    
     # add subparser for model types
     subparsers = parser.add_subparsers(dest='network_type')
     define_pdcnet_parser(subparsers)
