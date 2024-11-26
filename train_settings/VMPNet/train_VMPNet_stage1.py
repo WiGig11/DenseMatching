@@ -165,7 +165,5 @@ def run(settings):
 
     trainer.train(settings.n_epochs, load_latest=True, fail_safe=True)
 
-    #test
-
 
 
