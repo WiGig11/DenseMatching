@@ -180,6 +180,133 @@ class MixtureDensityEstimatorFromCorr(nn.Module):
                     proba_map = uncertainty_corr[:, 1:]
                     return log_var_map, proba_map
 
+class MixtureDensityLnGEstimatorFromCorr(nn.Module):
+    def __init__(self, in_channels, batch_norm, search_size, output_channels=6, estimate_all_variance=False,
+                 concatenate_with_flow=False, nbr_channels_concatenated_flow=2, output_all_channels_together=False):
+        super(MixtureDensityEstimatorFromCorr, self).__init__()
+        self.estimate_all_variance=estimate_all_variance
+        self.concatenate_with_flow=concatenate_with_flow
+        self.search_size = search_size
+        self.output_all_channels_together = output_all_channels_together
+        self.output_channels = output_channels
+        if self.search_size == 9:
+            self.conv_0 = conv(in_channels, 32, kernel_size=3, stride=1, padding=0, batch_norm=batch_norm)
+            self.conv_1 = conv(32, 32, kernel_size=3, stride=1, padding=0, batch_norm=batch_norm)
+            self.conv_2 = conv(32, 16, kernel_size=3, stride=1, padding=0, batch_norm=batch_norm)
+            if self.estimate_all_variance:
+                self.predict_uncertainty = nn.Conv2d(16, output_channels + 2, kernel_size=3, stride=1, padding=0, bias=True)
+            else:
+                self.predict_uncertainty = nn.Conv2d(16, output_channels, kernel_size=3, stride=1, padding=0, bias=True)
+        elif search_size == 16:
+            self.conv_0 = conv(in_channels, 32, kernel_size=3, stride=1, padding=0, batch_norm=batch_norm)
+            self.maxpool = nn.MaxPool2d((2, 2))
+            self.conv_1 = conv(32, 32, kernel_size=3, stride=1, padding=0, batch_norm=batch_norm)
+            self.conv_2 = conv(32, 16, kernel_size=3, stride=1, padding=0, batch_norm=batch_norm)
+            if self.estimate_all_variance:
+                self.predict_uncertainty = nn.Conv2d(16, output_channels + 2, kernel_size=3, stride=1, padding=0, bias=True)
+            else:
+                self.predict_uncertainty = nn.Conv2d(16, output_channels, kernel_size=3, stride=1, padding=0, bias=True)
+
+        if self.concatenate_with_flow:
+            self.conv_3 = conv(4 + nbr_channels_concatenated_flow, 32, kernel_size=3, stride=1, padding=1, batch_norm=batch_norm)
+            self.conv_4 = conv(32, 16, kernel_size=3, stride=1, padding=1, batch_norm=batch_norm)
+            if self.estimate_all_variance:
+                self.predict_uncertainty_final = nn.Conv2d(16, output_channels+2, kernel_size=3, stride=1, padding=1, bias=True)
+            else:
+                self.predict_uncertainty_final = nn.Conv2d(16, output_channels, kernel_size=3, stride=1, padding=1, bias=True)
+
+    def forward(self, x, previous_uncertainty=None, flow=None, x_second_corr=None):
+        # x shape is b, s*s, h, w
+        b, _, h, w = x.size()
+        x = x.permute(0, 2, 3, 1).contiguous().view(b*h*w, self.search_size, self.search_size).unsqueeze(1).contiguous()
+        # x is now shape b*h*w, 1, s, s
+
+        output_channels  = self.output_channels
+
+        if x_second_corr is not None:
+            x_second_corr = x_second_corr.permute(0, 2, 3, 1).contiguous().view(b * h * w, self.search_size, self.search_size).unsqueeze(1).contiguous()
+            # x_second_corr is now shape b*h*w, 1, s, s
+            x = torch.cat((x, x_second_corr), 1)
+            # x is now shape b*h*w, 2, s, s
+
+        if previous_uncertainty is not None:
+            # shape is b, 8, h, w
+            previous_uncertainty = previous_uncertainty.permute(0, 2, 3, 1).contiguous().view(b * h * w, -1).unsqueeze(2).unsqueeze(2)
+            previous_uncertainty = previous_uncertainty.repeat(1, 1, self.search_size, self.search_size)
+            x = torch.cat((x, previous_uncertainty), 1)
+
+        if self.search_size == 9:
+            x = self.conv_2(self.conv_1(self.conv_0(x)))
+            uncertainty_corr = self.predict_uncertainty(x)
+        elif self.search_size == 16:
+            x = self.conv_0(x)
+            x = self.maxpool(x)
+            x = self.conv_2(self.conv_1(x))
+            uncertainty_corr = self.predict_uncertainty(x)
+
+        if self.concatenate_with_flow:
+            if self.estimate_all_variance:
+                # shape is b*h*w, 8, 1, 1
+                uncertainty_corr = uncertainty_corr.squeeze().view(b, h, w, 8).permute(0, 3, 1, 2)
+            else:
+                # shape is b*h*w, 6, 1, 1
+                uncertainty_corr = uncertainty_corr.squeeze().view(b, h, w, 6).permute(0, 3, 1, 2)
+                # shape is b, 6, h, w
+                log_var_map_alpha = uncertainty_corr[:, 0].unsqueeze(1) #large
+                log_var_map_beta = uncertainty_corr[:, 1].unsqueeze(1) # large
+                proba_map = uncertainty_corr[:, 2:]
+                uncertainty_corr = torch.cat((log_var_map_alpha,log_var_map_beta,
+                                              torch.zeros_like(log_var_map_alpha, requires_grad=False),
+                                              torch.zeros_like(log_var_map_beta, requires_grad=False), proba_map), 1)
+                # concantate all results together 
+                # now shape is b, 6, h, w # based only on the correlation here
+
+            uncertainty_and_flow = torch.cat((uncertainty_corr, flow), 1)
+            x = self.conv_4(self.conv_3(uncertainty_and_flow))
+            uncertainty = self.predict_uncertainty_final(x)
+
+            if self.output_all_channels_together:
+                return uncertainty
+            else:
+                if self.estimate_all_variance:
+                    # shape is b*h*w, 8, 1, 1
+                    large_log_var_alpha = uncertainty[:, 0].unsqueeze(1)                    
+                    large_log_var_beta = uncertainty[:, 1].unsqueeze(1)
+                    small_var_alpha = uncertainty[:, 2].unsqueeze(1)
+                    small_var_beta = uncertainty[:, 3].unsqueeze(1)
+                    small_log_var_alpha = F.logsigmoid(small_var_alpha) # constraining the small var to 0 and 1 and putting sigmoid to it
+                    small_log_var_beta = F.logsigmoid(small_var_beta) # constraining the small var to 0 and 1 and putting sigmoid to it
+                    proba_map = uncertainty[:, 4:]
+                    return large_log_var_alpha, large_log_var_beta, small_log_var_alpha,\
+                            small_log_var_beta,proba_map
+                else:
+                    # shape is b, 6, h, w
+                    large_log_var_alpha = uncertainty[:, 0].unsqueeze(1)
+                    large_log_var_beta = uncertainty[:, 1].unsqueeze(1)
+                    proba_map = uncertainty[:, 2:]
+                    return large_log_var_alpha, large_log_var_beta, proba_map
+        else:
+            uncertainty_corr = uncertainty_corr.squeeze().view(b, h, w, -1).permute(0, 3, 1, 2).contiguous()
+            if self.output_all_channels_together:
+                return uncertainty_corr
+            else:
+                if self.estimate_all_variance:
+                    # shape is b*h*w, 8, 1, 1
+                    large_log_var_alpha = uncertainty_corr[:, 0].unsqueeze(1)                    
+                    large_log_var_beta = uncertainty_corr[:, 1].unsqueeze(1)
+                    small_log_var_alpha = uncertainty_corr[:, 2].unsqueeze(1)
+                    small_log_var_beta = uncertainty_corr[:, 3].unsqueeze(1)
+                    # small_log_var = F.logsigmoid(small_var)
+                    # constraining the small var to 0 and 1 and putting sigmoid to it
+                    proba_map = uncertainty_corr[:, 4:]
+                    return large_log_var_alpha, large_log_var_beta, small_log_var_alpha,small_log_var_beta,proba_map
+                else:
+                    # shape is b*h*w, 6, 1, 1
+                    # shape is b, 6, h, w
+                    large_log_var_alpha = uncertainty_corr[:, 0].unsqueeze(1)                    
+                    large_log_var_beta = uncertainty_corr[:, 1].unsqueeze(1)
+                    proba_map = uncertainty_corr[:, 2:]
+                    return large_log_var_alpha, large_log_var_beta, proba_map
 
 class MixtureDensityEstimatorFromUncertaintiesAndFlow(nn.Module):
     def __init__(self, in_channels, batch_norm, output_channels=3, estimate_small_variance=False,
@@ -223,3 +350,50 @@ class MixtureDensityEstimatorFromUncertaintiesAndFlow(nn.Module):
                 else:
                     proba_map = uncertainty[:, 1:]  # all the others are probability, sum should be 1 there
                 return log_var_map, proba_map
+
+class MixtureDensityLnGEstimatorFromUncertaintiesAndFlow(nn.Module):
+    def __init__(self, in_channels, batch_norm, output_channels=6, estimate_all_variance=False,
+                 output_all_channels_together=False):
+        super(MixtureDensityLnGEstimatorFromUncertaintiesAndFlow, self).__init__()
+        # 9
+        self.output_channels = output_channels
+        self.output_all_channels_together = output_all_channels_together
+        self.estimate_all_variance = estimate_all_variance
+        self.conv_0 = conv(in_channels, 32, kernel_size=3, stride=1, padding=1, batch_norm=batch_norm)
+        self.conv_1 = conv(32, 16, kernel_size=3, stride=1, padding=1, batch_norm=batch_norm)
+        if self.estimate_all_variance:
+            self.predict_uncertainty_final = nn.Conv2d(16, output_channels+2, kernel_size=3, stride=1, padding=1, bias=True)
+        else:
+            self.predict_uncertainty_final = nn.Conv2d(16, output_channels, kernel_size=3, stride=1, padding=1, bias=True)
+
+    def forward(self, x):
+        x = self.conv_1(self.conv_0(x))
+        uncertainty = self.predict_uncertainty_final(x)
+        if self.output_all_channels_together:
+            return uncertainty
+        else:
+            if self.estimate_all_variance:
+                # shape is b*h*w, 8, 1, 1
+                large_log_var_alpha = uncertainty[:, 0].unsqueeze(1)                    
+                large_log_var_beta = uncertainty[:, 1].unsqueeze(1)
+                small_var_alpha = uncertainty[:, 2].unsqueeze(1)
+                small_var_beta = uncertainty[:, 3].unsqueeze(1)
+                small_log_var_alpha = F.logsigmoid(small_var_alpha)
+                small_log_var_beta = F.logsigmoid(small_var_beta)
+                # constraining the small var to 0 and 1 and putting sigmoid to it
+                if self.output_channels == 1:
+                    proba_map = torch.ones_like(large_log_var_alpha)
+                    # in case one only predicts the log variance (unimodel distribution)
+                else:
+                    proba_map = uncertainty[:, 4:]
+                return large_log_var_alpha, large_log_var_beta, small_log_var_alpha,small_log_var_beta,proba_map
+            else:
+                # shape is b, 4, h, w
+                log_var_map_alpha = uncertainty[:, 0].unsqueeze(1)  # always one that is not fixed
+                log_var_map_beta = uncertainty[:, 1].unsqueeze(1)  # always one that is not fixed
+                if self.output_channels == 1:
+                    proba_map = torch.ones_like(log_var_map_alpha)
+                    # in case one only predicts the log variance (unimodel distribution)
+                else:
+                    proba_map = uncertainty[:, 2:]  # all the others are probability, sum should be 1 there
+                return log_var_map_alpha, log_var_map_beta,proba_map# all large ones

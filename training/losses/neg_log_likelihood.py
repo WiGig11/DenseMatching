@@ -31,33 +31,40 @@ class NLLMixtureLaplaceandGaussian:
             mask: valid mask, where the loss is computed. shape (b, 1, H, W)
         """
         # divide into two parts
-        b,c,h,w = weight_map.shape()
-        b,c1,h1,w1 = log_var.shape()
+        b,c,h,w = weight_map.shape
+        b,c1,h1,w1 = log_var.shape
         assert (c==c1 and h==h1 and w==w1), "must have same shape" 
-        weight_map_alpha = weight_map[:,:c//2,:,:] # *! this part alpha is for Gaussian beta is for Lapalacian
-        weight_map_beta = weight_map[:,c//2:,:,:]
-        log_var_alpha = log_var[:,:c//2,:,:]
-        log_var_beta = log_var[:,c//2:,:,:]
+
+        weight_map = nn.Softmax(dim=1)(weight_map)
+        weight_map_alpha = weight_map[:,c//2:,:,:] # *! this part alpha is for Gaussian beta is for Lapalacian
+        weight_map_beta = weight_map[:,:c//2,:,:] # *? 大的用拉普拉斯分布，小的用高斯分布
+        log_var_alpha = log_var[:,c//2:,:,:]
+        log_var_beta = log_var[:,:c//2,:,:]
+
+
+        import pdb
+        
 
         b, _, h, w = gt_flow.shape
-        #l1 = torch.logsumexp(weight_map, 1, keepdim=True)
-        weights_alpha_softmax = 0.5*nn.Softmax(weight_map_alpha)
-        exp_part = -1*math.sqrt(2)*torch.sum(torch.abs((gt_flow - est_flow)*self.ratio), 1, keepdim=True)*torch.exp(-0.5*log_var_alpha)
-        tmp1 = math.log(2)+log_var_alpha-math.log(torch.exp(exp_part))
-        l1 = torch.sum(weights_alpha_softmax*tmp1)
+        l1 = torch.logsumexp(weight_map_alpha, 1, keepdim=True)
         # shape will be b,1,h,w
-        
-        weights_beta_softmax = 0.5*nn.Softmax(weight_map_beta)
-        tmp2 = math.log(2*math.pi)+log_var_beta
-        exp_part = -1*torch.sum(torch.dist((gt_flow - est_flow)*self.ratio,p=2)**2)*torch.exp(-1*math.log(2)-log_var_alpha)
-        #exp_part = -1*torch.exp(-1*math.log(2))*torch.exp(-1*log_var_beta)*torch.sum(torch.dist((gt_flow - est_flow)*self.ratio,p=2)**2)
-        l2 = tmp2-math.log(torch.exp(exp_part))
-        l2 = torch.sum(weights_beta_softmax*l2)
-        #reg = math.sqrt(2)*torch.sum(torch.abs((gt_flow - est_flow)*self.ratio), 1, keepdim=True)  # shape will be b,1,h,w
-        #exponent = weight_map - math.log(2) - log_var - reg * torch.exp(-0.5*log_var)
-        #l2 = torch.logsumexp(exponent, 1, keepdim=True)
 
-        loss = l1 + l2
+        reg = math.sqrt(2)*torch.sum(torch.abs((gt_flow - est_flow)*self.ratio), 1, keepdim=True)  # shape will be b,1,h,w
+        exponent = weight_map_alpha - math.log(2) - log_var_alpha - reg * torch.exp(-0.5*log_var_alpha)
+        l2 = torch.logsumexp(exponent, 1, keepdim=True)
+
+        loss1 = l1 - l2
+        
+        PI = torch.tensor(np.pi).cuda()
+        l3 = torch.logsumexp(weight_map_beta, 1, keepdim=True)
+
+        reg1 = 0.5 * torch.sum((gt_flow - est_flow) ** 2, 1, keepdim=True)
+        exponent1 = weight_map_beta - torch.log(2 * PI) - log_var_beta - reg1 * torch.exp(-log_var_beta)
+        l4 = torch.logsumexp(exponent1, 1, keepdim=True)
+        loss2 = l3 - l4
+        
+
+        loss = 0.7*loss1 + 0.3*loss2
 
         if mask is not None:
             mask = ~torch.isnan(loss.detach()) & ~torch.isinf(loss.detach()) & mask

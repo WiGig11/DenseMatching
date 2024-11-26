@@ -9,12 +9,18 @@ from models.modules.local_correlation import correlation
 from models.modules.bilinear_deconv import BilinearConvTranspose2d
 from models.modules.feature_correlation_layer import GlobalFeatureCorrelationLayer
 from models.feature_backbones.VGG_features import VGGPyramid
-from models.PDCNet.mod_uncertainty import MixtureDensityEstimatorFromCorr, MixtureDensityEstimatorFromUncertaintiesAndFlow
+from models.VMPNet.mod_uncertainty import MixtureDensityEstimatorFromCorr, MixtureDensityLnGEstimatorFromCorr,MixtureDensityEstimatorFromUncertaintiesAndFlow,MixtureDensityLnGEstimatorFromUncertaintiesAndFlow
 from models.base_matching_net import set_glunet_parameters
-from models.PDCNet.base_pdcnet import ProbabilisticGLU
+from models.VMPNet.base_vmpnet import ProbabilisticGLU
 
+#This file is used to define the PDCNet
+'''
+1.the init func defines the overall structure and 
+1.only the fourth level uses the mapping level. the rest is predicted at flow level
+2.the uncertainty channel num is the output overall channel num
+'''
 
-class PDCNetModel(ProbabilisticGLU):
+class VMPNetModel(ProbabilisticGLU):
     """PDCNet model.
     The flows (flow2, flow1) are predicted such that they are scaled to the input image resolution. To obtain the flow
     from target to source at original resolution, one just needs to bilinearly upsample (without further scaling).
@@ -73,11 +79,16 @@ class PDCNetModel(ProbabilisticGLU):
             self.corr_module_for_corr_uncertainty_decoder = GlobalFeatureCorrelationLayer(shape='3D')
         self.give_layer_before_flow_to_uncertainty_decoder = give_layer_before_flow_to_uncertainty_decoder
         if self.estimate_three_modes:
-            uncertainty_output_channels = 4
+            uncertainty_output_channels = 8
         elif self.estimate_one_mode:
-            uncertainty_output_channels = 1
+            uncertainty_output_channels = 2
         else:
-            uncertainty_output_channels = 3
+            uncertainty_output_channels = 6
+        
+        # why such channels:
+        # one potional reason: when estimationg all modes, means estimationg two log and two proba map
+        # when estimating one large mode: estimating large var
+        # rest case: estimating large var and proba map (constraing small var to 1 as in the paper )
 
         # 16x16
         nd = 16*16  # global correlation
@@ -100,16 +111,16 @@ class PDCNetModel(ProbabilisticGLU):
             num_ch = 2
         else:
             num_ch = 1
-        self.corr_uncertainty_decoder4 = MixtureDensityEstimatorFromCorr(in_channels=num_ch,
+        self.corr_uncertainty_decoder4 = MixtureDensityLnGEstimatorFromCorr(in_channels=num_ch,
                                                                          batch_norm=self.params.batch_norm,
                                                                          search_size=16, output_channels=6,
                                                                          output_all_channels_together=True)
 
         if self.give_layer_before_flow_to_uncertainty_decoder:
-            uncertainty_input_channels = 6 + num_channels_last_conv
+            uncertainty_input_channels = 8 + num_channels_last_conv
         else:
-            uncertainty_input_channels = 6 + 2
-        self.uncertainty_decoder4 = MixtureDensityEstimatorFromUncertaintiesAndFlow(in_channels=uncertainty_input_channels,
+            uncertainty_input_channels = 8 + 2
+        self.uncertainty_decoder4 = MixtureDensityLnGEstimatorFromUncertaintiesAndFlow(in_channels=uncertainty_input_channels,
                                                                                     batch_norm=self.params.batch_norm,
                                                                                     output_channels=uncertainty_output_channels)
 
@@ -127,7 +138,7 @@ class PDCNetModel(ProbabilisticGLU):
                                                                         in_channels_corr=nd)
         self.decoder3 = decoder3
         input_to_refinement = num_channels_last_conv + 2
-        self.corr_uncertainty_decoder3 = MixtureDensityEstimatorFromCorr(in_channels=num_ch,
+        self.corr_uncertainty_decoder3 = MixtureDensityLnGEstimatorFromCorr(in_channels=num_ch,
                                                                          batch_norm=self.params.batch_norm,
                                                                          search_size=(self.params.md*2+1),
                                                                          output_all_channels_together=True,
@@ -146,7 +157,7 @@ class PDCNetModel(ProbabilisticGLU):
         else:
             # 4 channels uncertainty from previous level
             uncertainty_input_channels += 2 + 4
-        self.uncertainty_decoder3 = MixtureDensityEstimatorFromUncertaintiesAndFlow(in_channels=uncertainty_input_channels,
+        self.uncertainty_decoder3 = MixtureDensityLnGEstimatorFromUncertaintiesAndFlow(in_channels=uncertainty_input_channels,
                                                                                     batch_norm=self.params.batch_norm,
                                                                                     output_channels=uncertainty_output_channels)
         # weights for refinement module
@@ -167,7 +178,7 @@ class PDCNetModel(ProbabilisticGLU):
                                                                         in_channels_corr=nd)
         self.decoder2 = decoder2
         input_to_refinement = num_channels_last_conv
-        self.corr_uncertainty_decoder2 = MixtureDensityEstimatorFromCorr(in_channels=num_ch,
+        self.corr_uncertainty_decoder2 = MixtureDensityLnGEstimatorFromCorr(in_channels=num_ch,
                                                                          batch_norm=self.params.batch_norm,
                                                                          search_size=(self.params.md * 2 + 1), output_channels=6,
                                                                          output_all_channels_together=True)
@@ -184,7 +195,7 @@ class PDCNetModel(ProbabilisticGLU):
         else:
             # 4 channels uncertainty from previous level
             uncertainty_input_channels += 2 + 4
-        self.uncertainty_decoder2 = MixtureDensityEstimatorFromUncertaintiesAndFlow(in_channels=uncertainty_input_channels,
+        self.uncertainty_decoder2 = MixtureDensityLnGEstimatorFromUncertaintiesAndFlow(in_channels=uncertainty_input_channels,
                                                                                     batch_norm=self.params.batch_norm,
                                                                                     output_channels=uncertainty_output_channels)
 
@@ -217,7 +228,7 @@ class PDCNetModel(ProbabilisticGLU):
                                                                         nbr_upfeat_channels=self.params.nbr_upfeat_channels)
         self.decoder1 = decoder1
         input_to_refinement = num_channels_last_conv + 2
-        self.corr_uncertainty_decoder1 = MixtureDensityEstimatorFromCorr(in_channels=num_ch,
+        self.corr_uncertainty_decoder1 = MixtureDensityLnGEstimatorFromCorr(in_channels=num_ch,
                                                                          batch_norm=self.params.batch_norm,
                                                                          search_size=(self.params.md * 2 + 1),
                                                                          output_channels=6,
@@ -236,7 +247,7 @@ class PDCNetModel(ProbabilisticGLU):
         else:
             # 4 channels uncertainty from previous level
             uncertainty_input_channels += 2 + 4
-        self.uncertainty_decoder1 = MixtureDensityEstimatorFromUncertaintiesAndFlow(in_channels=uncertainty_input_channels,
+        self.uncertainty_decoder1 = MixtureDensityLnGEstimatorFromUncertaintiesAndFlow(in_channels=uncertainty_input_channels,
                                                                                     batch_norm=self.params.batch_norm,
                                                                                     output_channels=uncertainty_output_channels)
 
@@ -301,6 +312,7 @@ class PDCNetModel(ProbabilisticGLU):
                 x_second_corr = corr
             else:
                 raise NotImplementedError
+        
         else:
             input_corr_uncertainty_dec = corr
 
@@ -313,8 +325,8 @@ class PDCNetModel(ProbabilisticGLU):
         else:
             input_uncertainty = torch.cat((corr_uncertainty, flow), 1)
 
-        large_log_var_map, weight_map = uncertainty_predictor(input_uncertainty)
-        return large_log_var_map, weight_map
+        log_var_map_alpha, log_var_map_beta , weight_map = uncertainty_predictor(input_uncertainty)
+        return log_var_map_alpha, log_var_map_beta, weight_map# potionally all large based on the usage
 
     def estimate_at_mappinglevel(self, corr_uncertainty_module, uncertainty_predictor, c14, c24, h_256, w_256):
         # level 4: 16x16
@@ -336,34 +348,41 @@ class PDCNetModel(ProbabilisticGLU):
 
         # uncertainty decoder
         if self.give_layer_before_flow_to_uncertainty_decoder:
-            large_log_var_map4, weight_map4 = self.estimate_uncertainty_components(corr_uncertainty_module,
+            large_log_var_map_alpha4,large_log_var_map_beta4, weight_map4 = self.estimate_uncertainty_components(corr_uncertainty_module,
                                                                                    uncertainty_predictor,
                                                                                    self.params.global_corr_type,
                                                                                    corr4, c14, c24, x4,
                                                                                    global_local='use_global_corr_layer')
         else:
-            large_log_var_map4, weight_map4 = self.estimate_uncertainty_components(corr_uncertainty_module,
+            large_log_var_map_alpha4,large_log_var_map_beta4, weight_map4 = self.estimate_uncertainty_components(corr_uncertainty_module,
                                                                                    uncertainty_predictor,
                                                                                    self.params.global_corr_type,
                                                                                    corr4, c14, c24, flow4,
                                                                                    global_local='use_global_corr_layer')
 
         # constrain the large log var map
-        large_log_var_map4 = self.constrain_large_log_var_map(self.var_2_minus, self.var_2_plus_256, large_log_var_map4)
+        large_log_var_map_alpha4 = self.constrain_large_log_var_map(self.var_2_minus, self.var_2_plus_256, large_log_var_map_alpha4)
+        large_log_var_map_beta4 = self.constrain_large_log_var_map(self.var_2_minus, self.var_2_plus_256, large_log_var_map_beta4)
         if self.estimate_three_modes:
             # make the other fixed variances
-            small_log_var_map4 = torch.ones_like(large_log_var_map4, requires_grad=False) * torch.log(
+            small_log_var_map_alpha4 = torch.ones_like(large_log_var_map_alpha4, requires_grad=False) * torch.log(
                 self.var_1_minus_plus)
-            outlier_log_var_map4 = torch.ones_like(large_log_var_map4, requires_grad=False) * torch.log(
+            small_log_var_map_beta4 = torch.ones_like(large_log_var_map_beta4, requires_grad=False) * torch.log(
+                self.var_1_minus_plus)
+            outlier_log_var_map4 = torch.ones_like(large_log_var_map_alpha4, requires_grad=False) * torch.log(
                 self.var_3_minus_plus_256)
 
-            log_var_map4 = torch.cat((small_log_var_map4, large_log_var_map4, outlier_log_var_map4), 1)
-        elif self.estimate_one_mode:
-            log_var_map4 = large_log_var_map4
+            log_var_map4 = torch.cat((large_log_var_map_alpha4,small_log_var_map_alpha4, 
+                                      large_log_var_map_beta4,small_log_var_map_beta4,
+                                      outlier_log_var_map4), 1)
+        elif self.estimate_only_large_mode:
+            log_var_map4 = torch.cat((large_log_var_map_alpha4,large_log_var_map_beta4), 1)
         else:
-            # only 2 modes
-            small_log_var_map4 = torch.ones_like(large_log_var_map4, requires_grad=False) * torch.log(self.var_1_minus_plus)
-            log_var_map4 = torch.cat((small_log_var_map4, large_log_var_map4), 1)
+            # only 2 modes , four modes in fact
+            small_log_var_map_alpha4 = torch.ones_like(large_log_var_map_alpha4, requires_grad=False) * torch.log(self.var_1_minus_plus)
+            small_log_var_map_beta4 = torch.ones_like(large_log_var_map_beta4, requires_grad=False) * torch.log(self.var_1_minus_plus)
+            log_var_map4 = torch.cat((large_log_var_map_alpha4,small_log_var_map_alpha4, 
+                                      large_log_var_map_beta4,small_log_var_map_beta4), 1)
         return flow4, log_var_map4, weight_map4, corr4
 
     def estimate_at_flowlevel(self, ratio, c_t, c_s, up_flow, up_uncertainty_components, decoder, PWCNetRefinement,
@@ -407,14 +426,14 @@ class PDCNetModel(ProbabilisticGLU):
 
         # uncertainty decoder
         if self.give_layer_before_flow_to_uncertainty_decoder:
-            large_log_var_map, weight_map = self.estimate_uncertainty_components(corr_uncertainty_module,
+            large_log_var_map_alpha,large_log_var_map_beta, weight_map = self.estimate_uncertainty_components(corr_uncertainty_module,
                                                                                  uncertainty_predictor,
                                                                                  self.params.local_corr_type, corr,
                                                                                  c_t, c_s_warped, (x_ + x), up_flow,
                                                                                  up_uncertainty_components,
                                                                                  global_local='use_local_corr_layer')
         else:
-            large_log_var_map, weight_map = self.estimate_uncertainty_components(corr_uncertainty_module,
+            large_log_var_map_alpha,large_log_var_map_beta, weight_map = self.estimate_uncertainty_components(corr_uncertainty_module,
                                                                                  uncertainty_predictor,
                                                                                  self.params.local_corr_type, corr,
                                                                                  c_t, c_s_warped, res_flow, up_flow,
@@ -422,24 +441,30 @@ class PDCNetModel(ProbabilisticGLU):
                                                                                  global_local='use_local_corr_layer')
 
         # constraint variance
-        large_log_var_map = self.constrain_large_log_var_map(self.var_2_minus, sigma_max, large_log_var_map)
-        if self.estimate_three_modes:
-            # make the other fixed variances
-            small_log_var_map = torch.ones_like(large_log_var_map, requires_grad=False) * torch.log(
+        large_log_var_map_alpha = self.constrain_large_log_var_map(self.var_2_minus, sigma_max, large_log_var_map_alpha)
+        large_log_var_map_beta = self.constrain_large_log_var_map(self.var_2_minus, sigma_max, large_log_var_map_beta)
+        if self.estimate_all_modes:
+            # make the other fixed variances            
+            small_log_var_map_alpha = torch.ones_like(large_log_var_map_alpha, requires_grad=False) * torch.log(
                 self.var_1_minus_plus)
-            outlier_log_var_map = torch.ones_like(large_log_var_map, requires_grad=False) * torch.log(
-                self.var_3_minus_plus)
+            small_log_var_map_beta = torch.ones_like(large_log_var_map_beta, requires_grad=False) * torch.log(
+                self.var_1_minus_plus)
+            outlier_log_var_map = torch.ones_like(large_log_var_map_alpha, requires_grad=False) * torch.log(
+                self.var_3_minus_plus_256)
 
-            log_var_map = torch.cat((small_log_var_map, large_log_var_map, outlier_log_var_map), 1)
-        elif self.estimate_one_mode:
-            log_var_map = large_log_var_map
+            log_var_map = torch.cat((large_log_var_map_alpha,small_log_var_map_alpha,
+                                      large_log_var_map_beta,small_log_var_map_beta,
+                                      outlier_log_var_map), 1)
+        elif self.estimate_only_large_mode:
+            log_var_map = torch.cat((large_log_var_map_alpha,large_log_var_map_beta), 1)
         else:
             # only 2 modes
-            small_log_var_map = torch.ones_like(large_log_var_map, requires_grad=False) * torch.log(
-                self.var_1_minus_plus)
-            log_var_map = torch.cat((small_log_var_map, large_log_var_map), 1)
+            small_log_var_map_alpha = torch.ones_like(large_log_var_map_alpha, requires_grad=False) * torch.log(self.var_1_minus_plus)
+            small_log_var_map_beta = torch.ones_like(large_log_var_map_beta, requires_grad=False) * torch.log(self.var_1_minus_plus)
+            log_var_map = torch.cat((large_log_var_map_alpha,small_log_var_map_alpha,
+                                      large_log_var_map_beta,small_log_var_map_beta), 1)
         return x, flow, log_var_map, weight_map
-
+        
     def upscaling(self, x, flow, log_var_map, weight_map, output_size, deconv=None, upfeat_layer=None):
         # up scaling
         output_size = [int(x) for x in output_size]
@@ -456,23 +481,37 @@ class PDCNetModel(ProbabilisticGLU):
         up_probability_map = F.interpolate(input=weight_map, size=output_size, mode='bilinear', align_corners=False)
 
         if self.estimate_three_modes:
-            up_large_log_var_map = F.interpolate(input=log_var_map[:, 1].unsqueeze(1), size=output_size,
+            # order:la.sa,lb,sb,outlier(optional)
+            up_large_log_var_map_alpha = F.interpolate(input=log_var_map[:, 0].unsqueeze(1), size=output_size,
                                                  mode='bilinear', align_corners=False)
-            up_small_log_var_map = torch.ones_like(up_large_log_var_map, requires_grad=False) * torch.log(
+            up_small_log_var_map_alpha = torch.ones_like(up_large_log_var_map_alpha, requires_grad=False) * torch.log(
                 self.var_1_minus_plus)
-            up_outlier_log_var_map = torch.ones_like(up_large_log_var_map, requires_grad=False) * torch.log(
+            up_large_log_var_map_beta = F.interpolate(input=log_var_map[:, 2].unsqueeze(1), size=output_size,
+                                                 mode='bilinear', align_corners=False)
+            up_small_log_var_map_beta = torch.ones_like(up_large_log_var_map_beta, requires_grad=False) * torch.log(
+                self.var_1_minus_plus)
+            up_outlier_log_var_map = torch.ones_like(up_large_log_var_map_alpha, requires_grad=False) * torch.log(
                 self.var_3_minus_plus)
-            up_log_var_map = torch.cat((up_small_log_var_map, up_large_log_var_map, up_outlier_log_var_map), 1)
+            up_log_var_map = torch.cat((up_large_log_var_map_alpha,up_small_log_var_map_alpha,
+                                         up_large_log_var_map_beta,up_small_log_var_map_beta,
+                                        up_outlier_log_var_map), 1)
         elif self.estimate_one_mode:
-            up_large_log_var_map = F.interpolate(input=log_var_map, size=output_size,
+            up_large_log_var_map_alpha = F.interpolate(input=log_var_map[:, 0].unsqueeze(1), size=output_size,
                                                  mode='bilinear', align_corners=False)
-            up_log_var_map = up_large_log_var_map
+            up_large_log_var_map_beta = F.interpolate(input=log_var_map[:, 2].unsqueeze(1), size=output_size,
+                                                 mode='bilinear', align_corners=False)
+            up_log_var_map = torch.cat((up_large_log_var_map_alpha, up_large_log_var_map_beta,), 1)
         else:
-            up_large_log_var_map = F.interpolate(input=log_var_map[:, 1].unsqueeze(1), size=output_size,
+            up_large_log_var_map_alpha = F.interpolate(input=log_var_map[:, 0].unsqueeze(1), size=output_size,
                                                  mode='bilinear', align_corners=False)
-            up_small_log_var_map = torch.ones_like(up_large_log_var_map, requires_grad=False) * torch.log(
+            up_small_log_var_map_alpha = torch.ones_like(up_large_log_var_map_alpha, requires_grad=False) * torch.log(
                 self.var_1_minus_plus)
-            up_log_var_map = torch.cat((up_small_log_var_map, up_large_log_var_map), 1)
+            up_large_log_var_map_beta = F.interpolate(input=log_var_map[:, 2].unsqueeze(1), size=output_size,
+                                                 mode='bilinear', align_corners=False)
+            up_small_log_var_map_beta = torch.ones_like(up_large_log_var_map_beta, requires_grad=False) * torch.log(
+                self.var_1_minus_plus)
+            up_log_var_map = torch.cat((up_large_log_var_map_alpha,up_small_log_var_map_alpha,
+                                        up_large_log_var_map_beta,up_small_log_var_map_beta,), 1)
 
         return up_flow, up_log_var_map, up_probability_map, up_feat
 
@@ -597,7 +636,7 @@ class PDCNetModel(ProbabilisticGLU):
             # original image sizes h_original x w_original
             # prepare output dict
             output_256 = {'flow_estimates': [flow4, flow3], 'correlation': corr4,
-                          'uncertainty_estimates': [[log_var_map4, weight_map4], [log_var_map3, weight_map3]]}
+                            'uncertainty_estimates': [[log_var_map4, weight_map4], [log_var_map3, weight_map3]]}
 
             # need to scale the log variance of the LNet.
             # also scale the log variance of the small variance ==> it will correspond to a higher variance
@@ -620,11 +659,11 @@ class PDCNetModel(ProbabilisticGLU):
             if self.estimate_one_mode:
                 # unimodal
                 output = {'flow_estimates': [flow4, flow3, flow2, flow1],
-                          'uncertainty_estimates': [log_var_map4, log_var_map3, log_var_map2, log_var_map1]}
+                            'uncertainty_estimates': [log_var_map4, log_var_map3, log_var_map2, log_var_map1]}
             else:
                 # multi-modal
                 output = {'flow_estimates': [flow4, flow3, flow2, flow1],
-                          'uncertainty_estimates': [[log_var_map4, weight_map4], [log_var_map3, weight_map3],
+                            'uncertainty_estimates': [[log_var_map4, weight_map4], [log_var_map3, weight_map3],
                                                     [log_var_map2, weight_map2], [log_var_map1, weight_map1]]}
         else:
             if self.estimate_one_mode:
@@ -639,11 +678,13 @@ class PDCNetModel(ProbabilisticGLU):
                 # correspond to the H-Net
                 output = {'flow_estimates': [flow2, flow1],
                           'uncertainty_estimates': [[log_var_map2, weight_map2], [log_var_map1, weight_map1]]}
+                
         return output_256, output
 
 
+
 @model_constructor
-def PDCNet_vgg16(global_corr_type='feature_corr_layer', global_gocor_arguments=None, normalize='relu_l2norm',
+def VMPNet_vgg16(global_corr_type='feature_corr_layer', global_gocor_arguments=None, normalize='relu_l2norm',
                  cyclic_consistency=False, local_corr_type='feature_corr_layer', local_gocor_arguments=None,
                  same_local_corr_at_all_levels=True, decoder_inputs='corr_flow_feat',
                  local_decoder_type='OpticalFlowEstimator', global_decoder_type='CMDTop',
@@ -655,7 +696,7 @@ def PDCNet_vgg16(global_corr_type='feature_corr_layer', global_gocor_arguments=N
                  estimate_one_mode=False, laplace_distr=True,
                  make_two_feature_copies=False, train_features=False, scale_low_resolution=False):
 
-    net = PDCNetModel(global_gocor_arguments=global_gocor_arguments, global_corr_type=global_corr_type, normalize=normalize,
+    net = VMPNetModel(global_gocor_arguments=global_gocor_arguments, global_corr_type=global_corr_type, normalize=normalize,
                       normalize_features=True, cyclic_consistency=cyclic_consistency,
                       local_corr_type=local_corr_type, local_gocor_arguments=local_gocor_arguments,
                       same_local_corr_at_all_levels=same_local_corr_at_all_levels,
@@ -676,3 +717,4 @@ def PDCNet_vgg16(global_corr_type='feature_corr_layer', global_gocor_arguments=N
                       make_two_feature_copies=make_two_feature_copies, train_features=train_features,
                       scale_low_resolution=scale_low_resolution)
     return net
+
