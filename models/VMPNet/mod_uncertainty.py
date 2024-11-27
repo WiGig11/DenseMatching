@@ -304,9 +304,8 @@ class MixtureDensityLnGEstimatorFromCorr(nn.Module):
                     # shape is b*h*w, 6, 1, 1
                     # shape is b, 6, h, w
                     large_log_var_alpha = uncertainty_corr[:, 0].unsqueeze(1)                    
-                    large_log_var_beta = uncertainty_corr[:, 1].unsqueeze(1)
-                    proba_map = uncertainty_corr[:, 2:]
-                    return large_log_var_alpha, large_log_var_beta, proba_map
+                    proba_map = uncertainty_corr[:, 1:]
+                    return large_log_var_alpha, proba_map
 
 class MixtureDensityEstimatorFromUncertaintiesAndFlow(nn.Module):
     def __init__(self, in_channels, batch_norm, output_channels=3, estimate_small_variance=False,
@@ -389,11 +388,11 @@ class MixtureDensityLnGEstimatorFromUncertaintiesAndFlow(nn.Module):
                 return large_log_var_alpha, large_log_var_beta, small_log_var_alpha,small_log_var_beta,proba_map
             else:
                 # shape is b, 4, h, w
+                # *? test
                 log_var_map_alpha = uncertainty[:, 0].unsqueeze(1)  # always one that is not fixed
-                log_var_map_beta = uncertainty[:, 1].unsqueeze(1)  # always one that is not fixed
                 if self.output_channels == 1:
                     proba_map = torch.ones_like(log_var_map_alpha)
                     # in case one only predicts the log variance (unimodel distribution)
                 else:
-                    proba_map = uncertainty[:, 2:]  # all the others are probability, sum should be 1 there
-                return log_var_map_alpha, log_var_map_beta,proba_map# all large ones
+                    proba_map = uncertainty[:, 1:]  # all the others are probability, sum should be 1 there
+                return log_var_map_alpha, proba_map# all large ones

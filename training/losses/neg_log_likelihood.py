@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import math
 import torch.nn as nn
-
+import pdb
 
 class NLLMixtureLaplaceandGaussian:
     """ Computes Negative Log Likelihood loss for a Mixture of Laplace distributions and Gaussian distributions. """
@@ -36,14 +36,10 @@ class NLLMixtureLaplaceandGaussian:
         assert (c==c1 and h==h1 and w==w1), "must have same shape" 
 
         weight_map = nn.Softmax(dim=1)(weight_map)
-        weight_map_alpha = weight_map[:,c//2:,:,:] # *! this part alpha is for Gaussian beta is for Lapalacian
-        weight_map_beta = weight_map[:,:c//2,:,:] # *? 大的用拉普拉斯分布，小的用高斯分布
-        log_var_alpha = log_var[:,c//2:,:,:]
-        log_var_beta = log_var[:,:c//2,:,:]
-
-
-        import pdb
-        
+        weight_map_alpha = weight_map[:,:2:,:,:] # *! this part alpha is for Gaussian beta is for Lapalacian
+        weight_map_beta = weight_map[:,2:,:,:] # *? 大的用拉普拉斯分布，小的用高斯分布
+        log_var_alpha = log_var[:,:2:,:,:]
+        log_var_beta = log_var[:,2:,:,:]
 
         b, _, h, w = gt_flow.shape
         l1 = torch.logsumexp(weight_map_alpha, 1, keepdim=True)
