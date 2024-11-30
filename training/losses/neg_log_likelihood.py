@@ -60,7 +60,7 @@ class NLLMixtureLaplaceandGaussian:
         loss2 = l3 - l4
         
 
-        loss = 0.7*loss1 + 0.3*loss2
+        loss = 0.8*loss1 + 0.2*loss2
 
         if mask is not None:
             mask = ~torch.isnan(loss.detach()) & ~torch.isinf(loss.detach()) & mask

@@ -24,8 +24,8 @@ from admin.loading import partial_load
 def run(settings):
     settings.description = 'Default train settings for VMPNet+ stage 1'
     settings.data_mode = 'local'
-    settings.batch_size = 1
-    settings.n_threads = 1
+    settings.batch_size = 10
+    settings.n_threads = 8
     settings.multi_gpu = False
     settings.print_interval = 500
     settings.lr = 0.0001
@@ -52,7 +52,7 @@ def run(settings):
                             max_shear=0, max_ar_factor=0.,
                             max_scale=0.3, pad_amount=0)
 
-    coco_dataset_train = MSCOCO(root=settings.env.coco, split='train', version='2014',
+    coco_dataset_train = MSCOCO(root=settings.env.coco, split='val', version='2017',
                                 min_area=settings.min_area_objects)
 
     # base dataset with image pairs and ground-truth flow field + adding perturbations
@@ -121,7 +121,7 @@ def run(settings):
                          local_decoder_type='OpticalFlowEstimatorResidualConnection',
                          global_decoder_type='CMDTopResidualConnection',
                          refinement_at_finest_level=True, apply_refinement_finest_resolution=True,
-                         corr_for_corr_uncertainty_decoder='corr', var_1_minus_plus=1.0, var_2_minus=2.0,
+                         corr_for_corr_uncertainty_decoder='corr', var_1_minus_plus=1.0, var_2_minus=3.0,
                          var_2_plus_256=256 ** 2, var_2_plus=520 ** 2, estimate_three_modes=False,
                          give_layer_before_flow_to_uncertainty_decoder=True)
 

@@ -391,9 +391,9 @@ class VMPNetModel(ProbabilisticGLU):
         else:
             # L ： 2 + 2 map
             # G : 1 + 1 map
-            small_log_var_map_alpha4 = torch.ones_like(large_log_var_map_alpha4, requires_grad=False) * torch.log(self.var_1_minus_plus)
+            small_log_var_map_alpha4 = torch.ones_like(large_log_var_map_alpha4, requires_grad=False) * torch.log(2*self.var_1_minus_plus)
             
-            Gaussian_log_var_map_beta4 = torch.ones_like(large_log_var_map_alpha4, requires_grad=False) * torch.log(0.9*self.var_1_minus_plus)
+            Gaussian_log_var_map_beta4 = torch.ones_like(large_log_var_map_alpha4, requires_grad=False) * torch.log(self.var_1_minus_plus)
             log_var_map4 = torch.cat((large_log_var_map_alpha4,small_log_var_map_alpha4, 
                                       Gaussian_log_var_map_beta4), 1)
         return flow4, log_var_map4, weight_map4, corr4
@@ -455,7 +455,7 @@ class VMPNetModel(ProbabilisticGLU):
 
         # constraint variance
         large_log_var_map_alpha = self.constrain_large_log_var_map(self.var_2_minus, sigma_max, large_log_var_map_alpha)
-        if self.estimate_all_modes:
+        if self.estimate_three_modes:
             # *! 不可用
             # make the other fixed variances            
              small_log_var_map = torch.ones_like(large_log_var_map_alpha, requires_grad=False) * torch.log(
@@ -474,9 +474,9 @@ class VMPNetModel(ProbabilisticGLU):
             #log_var_map = torch.cat((large_log_var_map_alpha,large_log_var_map_beta), 1)
         else:
             # only 2 modes
-            small_log_var_map_alpha = torch.ones_like(large_log_var_map_alpha, requires_grad=False) * torch.log(self.var_1_minus_plus)
+            small_log_var_map_alpha = torch.ones_like(large_log_var_map_alpha, requires_grad=False) * torch.log(2*self.var_1_minus_plus)
             
-            Gaussian_log_var_map_beta = torch.ones_like(large_log_var_map_alpha, requires_grad=False) * torch.log(0.9*self.var_1_minus_plus)
+            Gaussian_log_var_map_beta = torch.ones_like(large_log_var_map_alpha, requires_grad=False) * torch.log(self.var_1_minus_plus)
             
             log_var_map = torch.cat((large_log_var_map_alpha,small_log_var_map_alpha,
                                       Gaussian_log_var_map_beta), 1)
@@ -518,9 +518,9 @@ class VMPNetModel(ProbabilisticGLU):
             up_large_log_var_map_alpha = F.interpolate(input=log_var_map[:, 0].unsqueeze(1), size=output_size,
                                                  mode='bilinear', align_corners=False)
             up_small_log_var_map_alpha = torch.ones_like(up_large_log_var_map_alpha, requires_grad=False) * torch.log(
-                self.var_1_minus_plus)
+                2*self.var_1_minus_plus)
             
-            Gaussian_log_var_map_beta = torch.ones_like(up_large_log_var_map_alpha, requires_grad=False) * torch.log(0.9*self.var_1_minus_plus)
+            Gaussian_log_var_map_beta = torch.ones_like(up_large_log_var_map_alpha, requires_grad=False) * torch.log(self.var_1_minus_plus)
 
             up_log_var_map = torch.cat((up_large_log_var_map_alpha,up_small_log_var_map_alpha,
                                         Gaussian_log_var_map_beta), 1)
