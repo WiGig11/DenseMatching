@@ -24,9 +24,9 @@ from admin.loading import partial_load
 def run(settings):
     settings.description = 'Default train settings for VMPNet+ stage 1'
     settings.data_mode = 'local'
-    settings.batch_size = 10
+    settings.batch_size = 16
     settings.n_threads = 8
-    settings.multi_gpu = False
+    settings.multi_gpu = True
     settings.print_interval = 500
     settings.lr = 0.0001
     settings.scheduler_steps = [50, 90]
@@ -52,7 +52,7 @@ def run(settings):
                             max_shear=0, max_ar_factor=0.,
                             max_scale=0.3, pad_amount=0)
 
-    coco_dataset_train = MSCOCO(root=settings.env.coco, split='val', version='2017',
+    coco_dataset_train = MSCOCO(root=settings.env.coco, split='train', version='2014',
                                 min_area=settings.min_area_objects)
 
     # base dataset with image pairs and ground-truth flow field + adding perturbations

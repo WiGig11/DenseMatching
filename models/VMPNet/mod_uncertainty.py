@@ -183,7 +183,7 @@ class MixtureDensityEstimatorFromCorr(nn.Module):
 class MixtureDensityLnGEstimatorFromCorr(nn.Module):
     def __init__(self, in_channels, batch_norm, search_size, output_channels=6, estimate_all_variance=False,
                  concatenate_with_flow=False, nbr_channels_concatenated_flow=2, output_all_channels_together=False):
-        super(MixtureDensityEstimatorFromCorr, self).__init__()
+        super(MixtureDensityLnGEstimatorFromCorr, self).__init__()
         self.estimate_all_variance=estimate_all_variance
         self.concatenate_with_flow=concatenate_with_flow
         self.search_size = search_size

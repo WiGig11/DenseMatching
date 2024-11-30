@@ -24,9 +24,9 @@ from admin.loading import partial_load
 def run(settings):
     settings.description = 'Default train settings for PDCNet+ stage 1'
     settings.data_mode = 'local'
-    settings.batch_size = 4
+    settings.batch_size = 16
     settings.n_threads = 8
-    settings.multi_gpu = False
+    settings.multi_gpu = True
     settings.print_interval = 500
     settings.lr = 0.0001
     settings.scheduler_steps = [50, 90]

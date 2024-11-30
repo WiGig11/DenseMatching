@@ -1,0 +1,2 @@
+python run_training.py PDCNet train_PDCNet_plus_stage1
+python run_training.py VMPNet train_VMPNet_stage1

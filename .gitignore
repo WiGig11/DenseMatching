@@ -9,3 +9,4 @@
 admin/local.py
 /evaluation
 /snapshots
+/data
