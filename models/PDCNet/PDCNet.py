@@ -9,6 +9,7 @@ from models.modules.local_correlation import correlation
 from models.modules.bilinear_deconv import BilinearConvTranspose2d
 from models.modules.feature_correlation_layer import GlobalFeatureCorrelationLayer
 from models.feature_backbones.VGG_features import VGGPyramid
+from models.feature_backbones.ViT_features import SwinPyramid,SwinVGGPyramid,SwinOnceVGGPyramid
 from models.PDCNet.mod_uncertainty import MixtureDensityEstimatorFromCorr, MixtureDensityEstimatorFromUncertaintiesAndFlow
 from models.base_matching_net import set_glunet_parameters
 from models.PDCNet.base_pdcnet import ProbabilisticGLU
@@ -267,6 +268,10 @@ class PDCNetModel(ProbabilisticGLU):
             if make_two_feature_copies:
                 self.pyramid_256 = VGGPyramid(train=train_features)
             feature_extractor = VGGPyramid(train=train_features)
+        elif pyramid_type == 'VIT':
+            if make_two_feature_copies:
+                self.pyramid_256 = SwinOnceVGGPyramid(train=train_features)
+            feature_extractor = SwinOnceVGGPyramid(train=train_features)
         else:
             raise NotImplementedError('The feature extractor that you selected in not implemented: {}'
                                       .format(pyramid_type))
@@ -661,6 +666,41 @@ def PDCNet_vgg16(global_corr_type='feature_corr_layer', global_gocor_arguments=N
                       same_local_corr_at_all_levels=same_local_corr_at_all_levels,
                       local_decoder_type=local_decoder_type, global_decoder_type=global_decoder_type,
                       batch_norm=True, pyramid_type='VGG', upfeat_channels=2, decoder_inputs=decoder_inputs,
+                      refinement_at_all_levels=False, refinement_at_adaptive_reso=True,
+                      refinement_at_finest_level=refinement_at_finest_level,
+                      use_interp_instead_of_deconv=use_interp_instead_of_deconv,
+                      init_deconv_w_bilinear=init_deconv_w_bilinear,
+                      apply_refinement_finest_resolution=apply_refinement_finest_resolution,
+                      corr_for_corr_uncertainty_decoder=corr_for_corr_uncertainty_decoder,
+                      var_1_minus_plus=var_1_minus_plus, var_2_minus=var_2_minus,
+                      var_2_plus=var_2_plus, var_2_plus_256=var_2_plus_256,
+                      var_3_minus_plus=var_3_minus_plus,
+                      var_3_minus_plus_256=var_3_minus_plus_256, estimate_three_modes=estimate_three_modes,
+                      estimate_one_mode = estimate_one_mode, laplace_distr=laplace_distr,
+                      give_layer_before_flow_to_uncertainty_decoder=give_layer_before_flow_to_uncertainty_decoder,
+                      make_two_feature_copies=make_two_feature_copies, train_features=train_features,
+                      scale_low_resolution=scale_low_resolution)
+    return net
+
+@model_constructor
+def PDCNet_vit(global_corr_type='feature_corr_layer', global_gocor_arguments=None, normalize='relu_l2norm',
+                 cyclic_consistency=False, local_corr_type='feature_corr_layer', local_gocor_arguments=None,
+                 same_local_corr_at_all_levels=True, decoder_inputs='corr_flow_feat',
+                 local_decoder_type='OpticalFlowEstimator', global_decoder_type='CMDTop',
+                 apply_refinement_finest_resolution=True, refinement_at_finest_level=True,
+                 corr_for_corr_uncertainty_decoder='gocor', use_interp_instead_of_deconv=False, init_deconv_w_bilinear=True,
+                 give_layer_before_flow_to_uncertainty_decoder=True,
+                 var_2_plus=0.0, var_2_plus_256=0.0, var_1_minus_plus=1.0, var_2_minus=2.0,
+                 estimate_three_modes=False, var_3_minus_plus=520 ** 2, var_3_minus_plus_256=256 ** 2,
+                 estimate_one_mode=False, laplace_distr=True,
+                 make_two_feature_copies=False, train_features=False, scale_low_resolution=False):
+
+    net = PDCNetModel(global_gocor_arguments=global_gocor_arguments, global_corr_type=global_corr_type, normalize=normalize,
+                      normalize_features=True, cyclic_consistency=cyclic_consistency,
+                      local_corr_type=local_corr_type, local_gocor_arguments=local_gocor_arguments,
+                      same_local_corr_at_all_levels=same_local_corr_at_all_levels,
+                      local_decoder_type=local_decoder_type, global_decoder_type=global_decoder_type,
+                      batch_norm=True, pyramid_type='VIT', upfeat_channels=2, decoder_inputs=decoder_inputs,
                       refinement_at_all_levels=False, refinement_at_adaptive_reso=True,
                       refinement_at_finest_level=refinement_at_finest_level,
                       use_interp_instead_of_deconv=use_interp_instead_of_deconv,
