@@ -35,7 +35,8 @@ class NLLMixtureLaplaceandGaussian:
         b,c1,h1,w1 = log_var.shape
         assert (c==c1 and h==h1 and w==w1), "must have same shape" 
 
-        weight_map = nn.Softmax(dim=1)(weight_map)
+        #weight_map = nn.Softmax(dim=1)(weight_map)
+        '''
         weight_map_alpha = weight_map[:,:2:,:,:] # *! this part alpha is for Gaussian beta is for Lapalacian
         weight_map_beta = weight_map[:,2:,:,:] # *? 大的用拉普拉斯分布，小的用高斯分布
         log_var_alpha = log_var[:,:2:,:,:]
@@ -61,6 +62,31 @@ class NLLMixtureLaplaceandGaussian:
         
 
         loss = 0.8*loss1 + 0.2*loss2
+
+        '''
+        weight_map_alpha = weight_map[:,:2:,:,:] # *! this part alpha is for Gaussian beta is for Lapalacian
+        weight_map_beta = weight_map[:,2:,:,:] # *? 大的用拉普拉斯分布，小的用高斯分布
+        log_var_alpha = log_var[:,:2:,:,:]
+        log_var_beta = log_var[:,2:,:,:]
+
+        b, _, h, w = gt_flow.shape
+        l1 = torch.logsumexp(weight_map, 1, keepdim=True)
+        # shape will be b,1,h,w
+
+        reg1 = math.sqrt(2)*torch.sum(torch.abs((gt_flow - est_flow)*self.ratio), 1, keepdim=True)  # shape will be b,1,h,w
+        exponent1 = weight_map_alpha - math.log(2) - log_var_alpha - reg1 * torch.exp(-0.5*log_var_alpha)
+        
+        PI = torch.tensor(np.pi).cuda()
+
+        reg2 = 0.5 * torch.sum((gt_flow - est_flow) ** 2, 1, keepdim=True)
+        exponent2 = weight_map_beta - torch.log(2 * PI) - log_var_beta - reg2 * torch.exp(-log_var_beta)
+
+        exponent = exponent1+exponent2
+
+        l2 = torch.logsumexp(exponent, 1, keepdim=True)
+        
+        loss = l1 - l2
+        
 
         if mask is not None:
             mask = ~torch.isnan(loss.detach()) & ~torch.isinf(loss.detach()) & mask
