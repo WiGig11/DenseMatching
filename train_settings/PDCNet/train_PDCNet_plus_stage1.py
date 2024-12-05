@@ -30,7 +30,7 @@ def run(settings):
     settings.print_interval = 500
     settings.lr = 0.0001
     settings.scheduler_steps = [50, 90]
-    settings.n_epochs = 1
+    settings.n_epochs = 50
     settings.initial_pretrained_model = None
 
     # dataset parameters
